@@ -10,6 +10,10 @@ install_session_switch_handler() {
     cp /ctx/components/system-scripts/session-switch-handler /usr/bin/
     chmod +x /usr/bin/session-switch-handler
 
+    # Install the set content type script
+    cp /ctx/components/system-scripts/set-content-type /usr/bin/
+    chmod +x /usr/bin/set-content-type
+
     # Install systemd service
     cp /ctx/config/systemd/session-switch-handler.service /usr/lib/systemd/system/
 

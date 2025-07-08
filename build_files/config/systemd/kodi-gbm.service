@@ -12,7 +12,7 @@ PAMName=login
 TTYPath=/dev/tty1
 
 Environment="HOME=/var/lib/kodi"
-
+ExecStartPre=/usr/bin/set-content-type
 ExecStart=/usr/bin/kodi-standalone --windowing=gbm
 ExecStop=-/usr/bin/killall --exact kodi
 ExecStopPost=/bin/bash -c 'if [ "$SERVICE_RESULT" = "success" ] && [ "$EXIT_CODE" = "0" ]; then echo "gamemode" > /var/run/session-switch-request; fi'
