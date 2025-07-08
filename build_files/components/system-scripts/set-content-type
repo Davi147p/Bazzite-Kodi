@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Possible content type values
+# No Data = 0
+# Graphics = 1
+# Photo = 2
+# Cinema = 3
+# Game = 4
+
+value=3
+
+connector_id=$(modetest -c 2>/dev/null | grep -E "connected\s+HDMI" | head -1 | awk '{print $1}')
+if [ -n "$connector_id" ]; then
+    modetest -w "${connector_id}:content type:${value}" 2>/dev/null || true
+fi
