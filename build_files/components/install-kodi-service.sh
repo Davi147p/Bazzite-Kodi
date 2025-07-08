@@ -72,9 +72,9 @@ def main():
         user_result = subprocess.run(['whoami'], capture_output=True, text=True)
         log(f"Running as user: {user_result.stdout.strip()}")
 
-        log("Executing: /usr/bin/kodi-request-gamemode")
+        log("Executing: /usr/bin/request-gamemode")
         result = subprocess.run(
-            ['/usr/bin/kodi-request-gamemode'],
+            ['/usr/bin/request-gamemode'],
             capture_output=True,
             text=True,
             timeout=30  # 30 second timeout

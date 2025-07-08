@@ -1,3 +1,6 @@
 #!/bin/bash
 echo "gamemode" > /var/run/session-switch-request
-echo "Requested switch to Gaming mode"
+if [ -t 1 ]; then
+    echo "Switching to Gaming Mode..."
+fi
+exit 0

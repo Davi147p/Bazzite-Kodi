@@ -29,11 +29,9 @@ install_session_request_scripts() {
     # Install user-facing commands
     cp /ctx/components/system-scripts/request-kodi /usr/bin/
     cp /ctx/components/system-scripts/request-gamemode /usr/bin/
-    cp /ctx/components/system-scripts/kodi-request-gamemode /usr/bin/
 
     chmod +x /usr/bin/request-kodi
     chmod +x /usr/bin/request-gamemode
-    chmod +x /usr/bin/kodi-request-gamemode
 
     log_success "Session request scripts installed"
 }
