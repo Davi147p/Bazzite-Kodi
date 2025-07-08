@@ -1,28 +1,15 @@
 # Kodi Base Image Builder
 FROM registry.fedoraproject.org/fedora:42 AS builder
 
-# Install build dependencies including ccache
+# Install build dependencies
 COPY scripts/install-dependencies.sh /tmp/
 RUN chmod +x /tmp/install-dependencies.sh && \
     /tmp/install-dependencies.sh && \
-    dnf install -y ccache && \
     dnf clean all
-
-# Configure ccache
-ENV CCACHE_DIR=/ccache
-ENV CCACHE_MAXSIZE=5G
-ENV CCACHE_COMPRESS=1
-ENV CCACHE_COMPRESSLEVEL=6
-ENV CCACHE_HARDLINK=1
-ENV PATH=/usr/lib64/ccache:$PATH
-
-# Create ccache directory
-RUN mkdir -p ${CCACHE_DIR} && chmod 777 ${CCACHE_DIR}
 
 # Build Kodi
 COPY scripts/build-kodi.sh /tmp/
-RUN --mount=type=cache,target=/ccache \
-    chmod +x /tmp/build-kodi.sh && \
+RUN chmod +x /tmp/build-kodi.sh && \
     /tmp/build-kodi.sh
 
 # Create runtime dependencies list using only ldd
