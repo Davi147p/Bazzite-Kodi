@@ -23,7 +23,7 @@ setup_ccache() {
     ccache --set-config=max_size=5G
     ccache --set-config=compression=true
     ccache --set-config=compression_level=6
-    ccache --set-config=hard_link=true 2>/dev/null || echo "[INFO] hard_link option not available"
+    ccache --set-config=hardlink=true
     ccache --set-config=sloppiness=file_macro,locale,time_macros
     ccache --set-config=hash_dir=false
 
