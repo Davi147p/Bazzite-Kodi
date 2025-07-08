@@ -1,0 +1,235 @@
+#!/bin/bash
+
+set -euo pipefail
+
+FIRSTBOOT_MARKER="/var/lib/kodi/.firstboot-complete"
+VERSION_FILE="/var/lib/kodi/.kodilauncher-version"
+
+log_info() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] KODI-FIRSTBOOT: $@" | systemd-cat -t kodi-firstboot -p info
+}
+
+log_error() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] KODI-FIRSTBOOT ERROR: $@" | systemd-cat -t kodi-firstboot -p err
+}
+
+log_warning() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] KODI-FIRSTBOOT WARNING: $@" | systemd-cat -t kodi-firstboot -p warning
+}
+
+is_deckyloader_installed() {
+    local main_user=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' | head -1)
+    if [ -z "$main_user" ]; then
+        return 1
+    fi
+
+    local user_home=$(getent passwd "$main_user" | cut -d: -f6)
+
+    # Check for key DeckyLoader components
+    if [ -f "${user_home}/homebrew/services/PluginLoader" ] && \
+       [ -f "/etc/systemd/system/plugin_loader.service" ] && \
+       systemctl is-enabled plugin_loader.service &>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+is_kodilauncher_installed() {
+    local main_user=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' | head -1)
+    if [ -z "$main_user" ]; then
+        return 1
+    fi
+
+    local user_home=$(getent passwd "$main_user" | cut -d: -f6)
+
+    # Check if KodiLauncher plugin directory exists
+    if [ -d "${user_home}/homebrew/plugins/KodiLauncher" ] && \
+       [ -f "$VERSION_FILE" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+check_for_updates() {
+    # Check if we need to update KodiLauncher
+    if [ ! -f "$VERSION_FILE" ]; then
+        log_info "No version file found, will check for updates later"
+        return 1
+    fi
+
+    local installed_version=$(cat "$VERSION_FILE" 2>/dev/null || echo "none")
+    log_info "Installed KodiLauncher version: $installed_version"
+
+    # Only check for updates if network is available
+    if curl -Is https://github.com --connect-timeout 5 --max-time 10 2>/dev/null | head -1 | grep -E "200|301|302" >/dev/null; then
+        local api_url="https://api.github.com/repos/Blahkaey/KodiLauncher/releases/latest"
+        local latest_version=$(curl -s "$api_url" | grep '"tag_name"' | cut -d'"' -f4)
+
+        if [ -n "$latest_version" ] && [ "$installed_version" != "$latest_version" ]; then
+            log_info "Update available: $installed_version -> $latest_version"
+            return 0
+        fi
+    else
+        log_info "Network not available, skipping update check"
+    fi
+
+    return 1
+}
+
+deploy_deckyloader() {
+    log_info "Deploying pre-staged DeckyLoader..."
+
+    # Set environment variable so deploy script knows it's first boot
+    export FIRSTBOOT=1
+
+    if /usr/bin/deploy-deckyloader; then
+        log_info "DeckyLoader deployed successfully"
+
+        # Verify installation actually succeeded
+        if is_deckyloader_installed; then
+            log_info "DeckyLoader installation verified"
+
+            # Also verify KodiLauncher was deployed
+            if is_kodilauncher_installed; then
+                log_info "KodiLauncher installation verified"
+                return 0
+            else
+                log_warning "KodiLauncher not found after deployment"
+                # Don't fail completely - DeckyLoader is installed at least
+                return 0
+            fi
+        else
+            log_error "DeckyLoader deployment verification failed"
+            return 1
+        fi
+    else
+        log_error "DeckyLoader deployment script failed"
+        return 1
+    fi
+}
+
+setup_kodi_symlink() {
+    local main_user="$1"
+    local user_home="$2"
+
+    log_info "Setting up Kodi configuration symlink for user $main_user"
+
+    # Ensure the kodi base directory exists with correct permissions
+    if [ ! -d "/var/lib/kodi" ]; then
+        mkdir -p /var/lib/kodi
+        chown kodi:wheel /var/lib/kodi
+        chmod 0770 /var/lib/kodi
+    fi
+
+    # Create .kodi directory if it doesn't exist
+    if [ ! -d "/var/lib/kodi/.kodi" ]; then
+        log_info "Creating /var/lib/kodi/.kodi directory"
+        mkdir -p /var/lib/kodi/.kodi
+    fi
+    
+    # Copy default Kodi files if they don't exist
+    if [ -d "/usr/share/kodi-defaults/userdata" ] && [ ! -f "/var/lib/kodi/.kodi/userdata/favourites.xml" ]; then
+        log_info "Copying default Kodi configuration files..."
+        cp -rn /usr/share/kodi-defaults/userdata/* /var/lib/kodi/.kodi/userdata/ 2>/dev/null || true
+        chown -R kodi:wheel /var/lib/kodi/.kodi/userdata
+        find /var/lib/kodi/.kodi/userdata -type d -exec chmod 0770 {} \;
+        find /var/lib/kodi/.kodi/userdata -type f -exec chmod 0660 {} \;
+    fi
+
+    # Set correct ownership and permissions on .kodi directory
+    chown -R kodi:wheel /var/lib/kodi/.kodi
+    chmod 0770 /var/lib/kodi/.kodi
+
+    # Set group write permissions recursively on existing content
+    find /var/lib/kodi/.kodi -type d -exec chmod 0770 {} \;
+    find /var/lib/kodi/.kodi -type f -exec chmod 0660 {} \;
+
+    # Check if target already exists
+    if [ -e "${user_home}/.kodi" ]; then
+        if [ -L "${user_home}/.kodi" ]; then
+            log_info "Kodi symlink already exists at ${user_home}/.kodi"
+            return 0
+        else
+            log_warning "${user_home}/.kodi already exists and is not a symlink"
+            # Back it up
+            log_info "Backing up existing .kodi directory to .kodi.backup"
+            sudo -u "$main_user" mv "${user_home}/.kodi" "${user_home}/.kodi.backup"
+        fi
+    fi
+
+    # Create the symlink
+    sudo -u "$main_user" ln -sf /var/lib/kodi/.kodi "${user_home}/.kodi"
+
+    if [ -L "${user_home}/.kodi" ]; then
+        log_info "Successfully created Kodi configuration symlink at ${user_home}/.kodi"
+        return 0
+    else
+        log_error "Failed to create Kodi configuration symlink"
+        return 1
+    fi
+}
+
+main() {
+    local needs_deployment=false
+    local deployment_reason=""
+
+    # Get main user info
+    local main_user=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' | head -1)
+    if [ -z "$main_user" ]; then
+        log_error "Could not find main user"
+        exit 1
+    fi
+
+    local user_home=$(getent passwd "$main_user" | cut -d: -f6)
+    log_info "Main user: $main_user (home: $user_home)"
+
+    # Setup Kodi symlink regardless of deployment status
+    setup_kodi_symlink "$main_user" "$user_home"
+
+    # Check what needs to be deployed
+    if ! is_deckyloader_installed; then
+        needs_deployment=true
+        deployment_reason="DeckyLoader not found"
+    elif ! is_kodilauncher_installed; then
+        needs_deployment=true
+        deployment_reason="KodiLauncher not found"
+    fi
+
+    if [ "$needs_deployment" = true ]; then
+        log_info "Deployment needed: $deployment_reason"
+
+        if deploy_deckyloader; then
+            # Only create marker after successful deployment
+            if [ ! -f "$FIRSTBOOT_MARKER" ]; then
+                touch "$FIRSTBOOT_MARKER"
+                chown kodi:kodi "$FIRSTBOOT_MARKER" 2>/dev/null || true
+                log_info "Note: A reboot is recommended to ensure all services start properly"
+            fi
+
+            log_info "Deployment completed successfully"
+        else
+            log_error "Deployment failed"
+            exit 1
+        fi
+    else
+        log_info "DeckyLoader and KodiLauncher already installed"
+
+        # Mark first boot complete if not already done
+        if [ ! -f "$FIRSTBOOT_MARKER" ]; then
+            touch "$FIRSTBOOT_MARKER"
+            chown kodi:kodi "$FIRSTBOOT_MARKER" 2>/dev/null || true
+        fi
+
+        # Check for updates
+        if check_for_updates; then
+            log_info "Running KodiLauncher update..."
+            /usr/bin/update-kodilauncher || log_error "Update failed"
+        else
+            log_info "No updates needed"
+        fi
+    fi
+}
+
+main

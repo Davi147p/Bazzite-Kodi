@@ -1,0 +1,29 @@
+[Unit]
+Description=Kodi standalone (GBM/HDR)
+After=remote-fs.target systemd-user-sessions.service network-online.target sound.target bluetooth.target polkit.service upower.service
+Wants=network-online.target polkit.service upower.service
+Conflicts=getty@tty1.service sddm.service
+
+[Service]
+Type=simple
+User=kodi
+Group=kodi
+PAMName=login
+TTYPath=/dev/tty1
+
+Environment="HOME=/var/lib/kodi"
+
+ExecStart=/usr/bin/kodi-standalone --windowing=gbm
+ExecStop=-/usr/bin/killall --exact kodi
+ExecStopPost=/bin/bash -c 'if [ "$SERVICE_RESULT" = "success" ] && [ "$EXIT_CODE" = "0" ]; then echo "gamemode" > /var/run/session-switch-request; fi'
+
+Restart=on-failure
+
+LimitNOFILE=65536
+
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+Alias=display-manager.service

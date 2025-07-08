@@ -1,24 +1,75 @@
 #!/bin/bash
+set -euo pipefail
 
-set -ouex pipefail
+source "/ctx/utility.sh"
 
-### Install packages
+install_kodi_dependencies() {
+    log_subsection "Installing Kodi runtime dependencies"
 
-# Packages can be installed from any enabled yum repo on the image.
-# RPMfusion repos are available by default in ublue main images
-# List of rpmfusion packages can be found here:
-# https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/39/x86_64/repoview/index.html&protocol=https&redirect=1
+    if [[ ! -f "/var/tmp/runtime-deps.txt" ]]; then
+        log_error "Runtime dependencies file not found!"
+        exit 1
+    fi
 
-# this installs a package from fedora repos
-dnf5 install -y tmux 
+    log_info "Checking which dependencies are already installed..."
+    missing_deps=""
 
-# Use a COPR Example:
-#
-# dnf5 -y copr enable ublue-os/staging
-# dnf5 -y install package
-# Disable COPRs so they don't end up enabled on the final image:
-# dnf5 -y copr disable ublue-os/staging
+    while IFS= read -r pkg; do
+        if [[ -n "$pkg" ]]; then
+            if ! rpm -q "$pkg" &>/dev/null; then
+                missing_deps="$missing_deps $pkg"
+            else
+                log_success "$pkg already installed"
+            fi
+        fi
+    done < /var/tmp/runtime-deps.txt
 
-#### Example for enabling a System Unit File
+    if [[ -n "$missing_deps" ]]; then
+        log_info "Installing missing dependencies:$missing_deps"
+        if ! dnf -y --nogpgcheck --setopt=strict=0 install $missing_deps >/dev/null 2>&1; then
+            log_warning "Failed to install some dependencies, attempting individually..."
+            for pkg in $missing_deps; do
+                dnf -y --nogpgcheck install "$pkg" || log_warning "Could not install $pkg"
+            done
+        fi
+    else
+        log_success "All dependencies already installed!"
+    fi
 
-systemctl enable podman.socket
+    # Clean up
+    rm -f /var/tmp/runtime-deps.txt
+    ldconfig
+    dnf clean all
+}
+
+main() {
+    log_section "Bazzite-Kodi Build Process"
+
+    install_kodi_dependencies
+
+    dnf5 -y install inotify-tools drm-utils drm_info edid-decode java-21-openjdk qbittorrent-nox
+
+    run_stage "Installing polkit rules" "/bin/bash /ctx/components/install-polkit.sh"
+    run_stage "Installing session switching system" "/bin/bash /ctx/components/install-session-switching.sh"
+    run_stage "Setting up Kodi service" "/bin/bash /ctx/components/install-kodi-service.sh"
+    run_stage "Pre-staging DeckyLoader components" "/bin/bash /ctx/components/install-deckyloader-prep.sh"
+    run_stage "Installing first boot setup" "/bin/bash /ctx/components/install-firstboot.sh"
+
+    log_success "Bazzite-Kodi build completed successfully!"
+}
+
+run_stage() {
+    local stage_name="$1"
+    local script_command="$2"
+
+    log_subsection "$stage_name"
+
+    if ! eval "$script_command"; then
+        log_error "Stage failed: $stage_name"
+        exit 1
+    fi
+
+    log_success "$stage_name completed"
+}
+
+main "$@"
