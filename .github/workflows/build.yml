@@ -9,11 +9,13 @@ on:
   push:
     branches:
       - main
+      - 'dev/**'
     paths-ignore:
       - '**/README.md'
       - 'kodi-base/**'
       - '.github/workflows/build-kodi-base.yml'
   workflow_dispatch:
+  workflow_call:
 
 env:
   IMAGE_DESC: "Adds kodi to bazzite with full hdr support & easy switching between kodi/gamemode"
@@ -75,10 +77,15 @@ jobs:
           # This generates all the tags for your image, you can add custom tags here too!
           # Default tags are "$DEFAULT_TAG" and "$DEFAULT_TAG.$date".
           tags: |
-            type=raw,value=${{ env.DEFAULT_TAG }}
-            type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
-            type=raw,value={{date 'YYYYMMDD'}}
-            type=raw,value=build-${{ github.run_number }}
+            # For main branch
+            type=raw,value=${{ env.DEFAULT_TAG }},enable={{is_default_branch}}
+            type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}},enable={{is_default_branch}}
+            type=raw,value={{date 'YYYYMMDD'}},enable={{is_default_branch}}
+
+            # For ALL branches
+            type=raw,value={{branch}}-build-${{ github.run_number }}
+
+            # For PRs
             type=sha,enable=${{ github.event_name == 'pull_request' }}
             type=ref,event=pr
           labels: |
@@ -138,10 +145,13 @@ jobs:
       #     done
 
       # These `if` statements are so that pull requests for your custom images do not make it publish any packages under your name without you knowing
-      # They also check if the runner is on the default branch so that things like the merge queue (if you enable it), are going to work
+      # They also check if the runner is on allowed branches (main or dev/*)
       - name: Login to GitHub Container Registry
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: |
+          github.event_name != 'pull_request' &&
+          (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+           startsWith(github.ref, 'refs/heads/dev/'))
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -149,7 +159,10 @@ jobs:
 
       - name: Push To GHCR
         uses: redhat-actions/push-to-registry@5ed88d269cf581ea9ef6dd6806d01562096bee9c # v2
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: |
+          github.event_name != 'pull_request' &&
+          (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+           startsWith(github.ref, 'refs/heads/dev/'))
         id: push
         env:
           REGISTRY_USER: ${{ github.actor }}
@@ -161,16 +174,18 @@ jobs:
           username: ${{ env.REGISTRY_USER }}
           password: ${{ env.REGISTRY_PASSWORD }}
 
-      # This section is optional and only needs to be enabled if you plan on distributing
-      # your project for others to consume. You will need to create a public and private key
-      # using Cosign and save the private key as a repository secret in Github for this workflow
-      # to consume. For more details, review the image signing section of the README.
       - name: Install Cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: |
+          github.event_name != 'pull_request' &&
+          (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+           startsWith(github.ref, 'refs/heads/dev/'))
 
       - name: Sign container image
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: |
+          github.event_name != 'pull_request' &&
+          (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+           startsWith(github.ref, 'refs/heads/dev/'))
         run: |
           IMAGE_FULL="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
           for tag in ${{ steps.metadata.outputs.tags }}; do
