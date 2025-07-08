@@ -4,15 +4,11 @@ set -euo pipefail
 
 TRIGGER_FILE="/var/run/session-switch-request"
 SDDM_CONF="/etc/sddm.conf.d/zz-steamos-autologin.conf"
-VT_INIT_FILE="/var/run/display-vt-initialized"
 
 initialize() {
     mkdir -p /var/run
     touch "$TRIGGER_FILE"
     chmod 666 "$TRIGGER_FILE"
-
-    # Reset display init flag on daemon start
-    rm -f /var/run/display-vt-initialized
 
     log_info "Session switch handler initialized"
 }
@@ -36,55 +32,12 @@ switch_mode() {
             } > "$SDDM_CONF"
         fi
 
-        #if [ "$service" = "kodi-gbm" ]; then
-        #    prepare_display
-        #fi
-
         log_info "Successfully switched to ${service} mode"
         return 0
     else
         log_error "Failed to switch to ${service} mode"
         return 1
     fi
-}
-
-prepare_display() {
-    if [ ! -f "$VT_INIT_FILE" ]; then
-        log_info "First transition from gaming - performing VT switch to initialize display pipeline"
-        
-        # Perform VT cycle to reset display state
-        local current_vt=$(fgconsole 2>/dev/null || echo "1")
-        chvt 2 2>/dev/null || true
-        sleep 0.05
-        chvt 1 2>/dev/null || true
-        sleep 0.1
-        
-        # Mark that we've done the initial VT switch
-        touch "$VT_INIT_FILE"
-        log_info "Display pipeline initialized via VT switch"
-
-        # Return early - don't do modetest on first transition
-        return
-    fi
-
-    # For subsequent transitions, use modetest for DPMS control
-    if command -v modetest &>/dev/null; then
-        local connector_id=$(modetest -c 2>/dev/null | grep "connected" | grep -v "disconnected" | head -1 | awk '{print $1}')
-        if [ -n "$connector_id" ]; then
-            log_info "Setting DPMS on via modetest (connector $connector_id)"
-            modetest -w "${connector_id}:DPMS:0" 2>/dev/null || {
-                log_warning "modetest DPMS set failed"
-            }
-        else
-            log_warning "No connected display found for modetest"
-        fi
-    else
-        log_warning "modetest not available"
-    fi
-
-
-
-    log_info "Display preparation complete"
 }
 
 main() {
