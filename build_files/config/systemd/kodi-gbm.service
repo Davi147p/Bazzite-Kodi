@@ -2,7 +2,7 @@
 Description=Kodi standalone (GBM/HDR)
 After=remote-fs.target systemd-user-sessions.service network-online.target sound.target bluetooth.target polkit.service upower.service
 Wants=network-online.target polkit.service upower.service
-Conflicts=getty@tty1.service sddm.service
+Conflicts=getty@tty1.service sddm.service lactd.service
 
 [Service]
 Type=simple
