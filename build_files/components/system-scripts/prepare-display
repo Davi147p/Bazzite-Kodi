@@ -11,5 +11,9 @@ value=3
 
 connector_id=$(modetest -c 2>/dev/null | grep -E "connected\s+HDMI" | head -1 | awk '{print $1}')
 if [ -n "$connector_id" ]; then
+    # Set content type
     modetest -w "${connector_id}:content type:${value}" 2>/dev/null || true
+
+    # Disable HDR
+    modetest -w "${connector_id}:HDR_OUTPUT_METADATA:0" 2>/dev/null || true
 fi
