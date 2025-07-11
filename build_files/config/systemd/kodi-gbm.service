@@ -2,7 +2,7 @@
 Description=Kodi standalone (GBM/HDR)
 After=remote-fs.target systemd-user-sessions.service network-online.target sound.target bluetooth.target polkit.service upower.service
 Wants=network-online.target polkit.service upower.service
-Conflicts=getty@tty1.service sddm.service lactd.service
+Conflicts=getty@tty1.service sddm.service lactd.service plugin_loader.service
 
 [Service]
 Type=simple
@@ -15,7 +15,6 @@ Environment="HOME=/var/lib/kodi"
 ExecStartPre=/usr/bin/prepare-display
 ExecStart=/usr/bin/kodi-standalone --windowing=gbm
 ExecStop=-/usr/bin/killall --exact kodi
-ExecStopPost=/bin/bash -c 'if [ "$SERVICE_RESULT" = "success" ] && [ "$EXIT_CODE" = "0" ]; then echo "gamemode" > /var/run/session-switch-request; fi'
 
 Restart=on-failure
 
